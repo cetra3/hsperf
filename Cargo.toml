@@ -1,0 +1,8 @@
+[package]
+name = "hsperf"
+version = "0.1.0"
+authors = ["cetra3 <peter@parashift.com.au>"]
+
+[dependencies]
+byteorder = "*"
+structopt = "0.2"
