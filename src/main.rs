@@ -8,6 +8,7 @@ mod perfdata;
 use std::path::PathBuf;
 use std::fs::File;
 use perfdata::{PerfData, convert};
+use std::io::BufReader;
 
 use structopt::StructOpt;
 
@@ -32,8 +33,8 @@ struct Config {
 fn main() {
     let config = Config::from_args();
 
-    let mut f = File::open(config.file).expect("Could not open file");
-    let data = PerfData::new(&mut f).expect("Could not get perf data");
+    let f = File::open(config.file).expect("Could not open file");
+    let data = PerfData::new(&mut BufReader::new(f)).expect("Could not get perf data");
 
     let max_mem = data.get_max_mem();
     let used_mem = data.get_used_mem();
