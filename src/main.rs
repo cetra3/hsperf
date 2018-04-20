@@ -1,3 +1,6 @@
+#![feature(test)]
+extern crate test;
+
 extern crate byteorder;
 
 #[macro_use]
@@ -34,7 +37,7 @@ fn main() {
     let config = Config::from_args();
 
     let f = File::open(config.file).expect("Could not open file");
-    let data = PerfData::new(&mut BufReader::new(f)).expect("Could not get perf data");
+    let data = PerfData::new(&mut BufReader::with_capacity(32768, f)).expect("Could not get perf data");
 
     let max_mem = data.get_max_mem();
     let used_mem = data.get_used_mem();
@@ -60,3 +63,21 @@ fn main() {
 }
 
 
+
+#[cfg(test)]
+mod tests {
+
+    use test::{Bencher};
+    use std::io::Cursor;
+    use super::PerfData;
+
+    #[bench]
+    fn bench_read(b: &mut Bencher) {
+
+        b.iter(|| {
+            let mut example_perf = Cursor::new(include_bytes!("../example_perf_file") as &[u8]);
+            PerfData::new(&mut example_perf).expect("Could not get perf data")
+        });
+
+    }
+}

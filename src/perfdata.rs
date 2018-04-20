@@ -46,6 +46,7 @@ use std::collections::BTreeMap;
 use byteorder::{BigEndian, LittleEndian, ByteOrder, ReadBytesExt};
 use std::io::{Error, ErrorKind};
 use std::io::Read;
+use std::str::from_utf8;
 
 const MAGIC: u32 = 0xcafec0c0;
 
@@ -171,6 +172,7 @@ pub fn read_prologue<T: ByteOrder>(f: &mut Read) -> Result<PerfDataPrologue, Err
 
 pub fn read_entries<T: ByteOrder>(prolog: &PerfDataPrologue, f: &mut Read) -> Result<BTreeMap<String, PerfDataEntry>,Error> {
 
+    let mut internal_buffer = [0; 8192];
 
     let mut entries = BTreeMap::new();
 
@@ -181,47 +183,61 @@ pub fn read_entries<T: ByteOrder>(prolog: &PerfDataPrologue, f: &mut Read) -> Re
 
         let data_type = f.read_u8()?;
         let _flags = f.read_i8()?;
-        let _data_units = f.read_u8()?;
-        let _data_variability = f.read_u8()?;
+        let data_units = f.read_u8()?;
+        let data_variability = f.read_u8()?;
         let data_offset = f.read_i32::<T>()?;
 
+        let name = {
+            
+            let name_length = (data_offset - name_offset) as usize;
 
-        let name_length: usize = data_offset as usize - name_offset as usize;
-        let mut name_buffer = vec!(0; name_length);
+            //let mut string_value = String::new();
+            let mut sub_buffer = &mut internal_buffer[0..name_length];
 
-        f.read_exact(&mut name_buffer)?;
-        let value_length = entry_length as usize - data_offset as usize;
-        let mut value_buffer = vec!(0; value_length);
+            f.read_exact(sub_buffer)?;
 
-        f.read_exact(&mut value_buffer)?;
+            let string_buffer = from_utf8(sub_buffer).map_err(|_| ErrorKind::InvalidData)?;
+            
+            let null_term_index = string_buffer.find('\0').unwrap_or(name_length);
 
-
-        let name = String::from_utf8_lossy(&name_buffer).to_string().replace("\0", "");
-
-        let value;
-
-        match data_type {
-            b'B'=> {
-                let string_value = String::from_utf8_lossy(&value_buffer).to_string();
-                value = PerfDataValue::String(string_value.replace("\0", ""));
-            },
-            b'J' => {
-                value = PerfDataValue::Long((&*value_buffer).read_i64::<T>()?);
-            }
-            _ => {
-                print!("Data type is: {}", data_type as char);
-                unimplemented!()
-            }
-        }
-
-        let entry = PerfDataEntry {
-            name,
-            value,
-            variability: PerfDataVariability::from(_data_variability),
-            unit: PerfDataUnit::from(_data_units)
+            String::from(&string_buffer[0..null_term_index])
         };
 
-        entries.insert(entry.name.clone(), entry);
+
+        let value = {
+
+            let value_length = (entry_length - data_offset) as usize;
+
+            match data_type {
+                b'B'=> {
+
+                    let mut sub_buffer = &mut internal_buffer[0..value_length];
+
+                    f.read_exact(sub_buffer)?;
+
+                    let string_buffer = from_utf8(sub_buffer).map_err(|_| ErrorKind::InvalidData)?;
+                    let null_term_index = string_buffer.find('\0').unwrap_or(value_length);
+
+                    PerfDataValue::String(String::from(&string_buffer[0..null_term_index]))
+                },
+                b'J' => {
+                    PerfDataValue::Long(f.read_i64::<T>()?)
+                }
+                _ => {
+                    print!("Data type is: {}", data_type as char);
+                    unimplemented!()
+                }
+            }
+        };
+
+
+        let entry = PerfDataEntry {
+            value,
+            variability: PerfDataVariability::from(data_variability),
+            unit: PerfDataUnit::from(data_units)
+        };
+
+        entries.insert(name, entry);
     }
 
     Ok(entries)
@@ -256,7 +272,6 @@ pub enum PerfDataUnit {
 
 #[derive(Debug)]
 pub struct PerfDataEntry {
-    name: String,
     value: PerfDataValue,
     unit: PerfDataUnit,
     variability: PerfDataVariability
@@ -281,10 +296,10 @@ impl fmt::Display for PerfDataEntry {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.unit == PerfDataUnit::Bytes {
             if let PerfDataValue::Long(val) = self.value {
-                return write!(f, "[{}]: {}", self.name, convert(val as f64))
+                return write!(f, "{}", convert(val as f64))
             }
         }
-        write!(f, "[{}]: {} ({:?})", self.name, self.value, self.unit)
+        write!(f, "{} ({:?})", self.value, self.unit)
     }
 }
 
