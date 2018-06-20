@@ -1,6 +1,3 @@
-#![feature(test)]
-extern crate test;
-
 extern crate byteorder;
 
 #[macro_use]
@@ -63,21 +60,3 @@ fn main() {
 }
 
 
-
-#[cfg(test)]
-mod tests {
-
-    use test::{Bencher};
-    use std::io::Cursor;
-    use super::PerfData;
-
-    #[bench]
-    fn bench_read(b: &mut Bencher) {
-
-        b.iter(|| {
-            let mut example_perf = Cursor::new(include_bytes!("../example_perf_file") as &[u8]);
-            PerfData::new(&mut example_perf).expect("Could not get perf data")
-        });
-
-    }
-}
