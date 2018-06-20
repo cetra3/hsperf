@@ -105,7 +105,16 @@ impl PerfData {
     }
 
     pub fn get_max_mem(&self)  -> i64 {
-        return self.get_val("sun.gc.generation.0.maxCapacity");
+        //G1 appears to set both generation 0 & generation 1 to the jvm max capacity
+        if let Some(ref metric) = self.entries.get("sun.gc.collector.0.name") {
+            if let PerfDataValue::String(ref val) = metric.value {
+                if val == "G1 incremental collections" {
+                    return self.get_val("sun.gc.generation.0.maxCapacity");
+                }
+            }
+        }
+
+        return self.get_val("sun.gc.generation.0.maxCapacity") + self.get_val("sun.gc.generation.1.maxCapacity");;
     }
 
     pub fn get_used_mem(&self) -> i64 {
@@ -191,13 +200,11 @@ pub fn read_entries<T: ByteOrder>(prolog: &PerfDataPrologue, f: &mut Read) -> Re
             
             let name_length = (data_offset - name_offset) as usize;
 
-            //let mut string_value = String::new();
             let mut sub_buffer = &mut internal_buffer[0..name_length];
 
             f.read_exact(sub_buffer)?;
 
             let string_buffer = from_utf8(sub_buffer).map_err(|_| ErrorKind::InvalidData)?;
-            
             let null_term_index = string_buffer.find('\0').unwrap_or(name_length);
 
             String::from(&string_buffer[0..null_term_index])
